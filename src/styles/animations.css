@@ -1,0 +1,97 @@
+.app-toast {
+  position: fixed;
+  right: 22px;
+  top: 76px;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 13px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #172033;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(18px);
+  font-size: 13px;
+  animation: toast-slide-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dark .app-toast {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5edf7;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+}
+
+.app-toast-success svg {
+  color: #059669;
+}
+
+.app-toast-error svg {
+  color: #dc2626;
+}
+
+.app-toast-warning svg {
+  color: #d97706;
+}
+
+.app-toast-info svg {
+  color: #2563eb;
+}
+
+.save-state-unsaved {
+  animation: save-state-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes image-widget-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes image-loading-sheen {
+  from {
+    background-position: 220% 0;
+  }
+  to {
+    background-position: -220% 0;
+  }
+}
+
+@keyframes save-state-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
