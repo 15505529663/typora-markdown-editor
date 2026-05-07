@@ -125,20 +125,16 @@ const getCommonStyles = () => `
       border-radius: 0 4px 4px 0;
     }
     code {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 1.55em;
-      padding: 0 0.42em;
-      margin: 0 0.14em;
+      padding: 2px 4px;
+      margin: 0 2px;
       border-radius: 4px;
       background: #f1f5f9;
       color: #e11d48;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 0.85em;
-      line-height: 1;
-      vertical-align: -0.08em;
-      white-space: break-spaces;
+      vertical-align: middle;
+      display: inline-block;
+      line-height: 1.2;
     }
     pre {
       overflow-x: auto;
@@ -150,15 +146,9 @@ const getCommonStyles = () => `
       line-height: 1.5;
     }
     pre code {
-      display: block;
-      min-height: 0;
       padding: 0;
-      margin: 0;
       background: transparent;
       color: inherit;
-      line-height: inherit;
-      vertical-align: baseline;
-      white-space: pre;
     }
     .hljs-keyword { color: #7c3aed; font-weight: bold; }
     .hljs-string { color: #0891b2; }
