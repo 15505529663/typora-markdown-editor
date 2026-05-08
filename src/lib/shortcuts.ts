@@ -31,7 +31,7 @@ export const getWindowsShortcutCommand = (event: KeyboardEvent): CommandId | nul
     if (key === '=' || key === '+' || code === 'Equal') return 'headingUp';
     if (key === '-' || key === '_' || code === 'Minus') return 'headingDown';
     if (key === 't') return 'table';
-    if (key === 'k') return 'link';
+    if (key === 'k') return 'insertLink';
     if (key === 'a') return 'selectAll';
     if (key === 'l') return 'selectLine';
     if (key === 'd') return 'selectWord';

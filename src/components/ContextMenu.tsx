@@ -57,7 +57,7 @@ const groups: Array<{ name: string; items: ContextMenuItem[] }> = [
   {
     name: '插入',
     items: [
-      { id: 'link', label: '插入链接', shortcut: 'Ctrl+K' },
+      { id: 'insertLink', label: '插入链接', shortcut: 'Ctrl+K' },
       { id: 'image', label: '插入图片', shortcut: 'Ctrl+Shift+I' },
       { id: 'table', label: '插入表格', shortcut: 'Ctrl+T' },
       { id: 'codeBlock', label: '插入代码块', shortcut: 'Ctrl+Shift+K' },

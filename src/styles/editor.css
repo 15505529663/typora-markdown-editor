@@ -232,17 +232,35 @@
 }
 
 .markdown-editor-codemirror .cm-editor {
-  background: transparent;
+  /* 解决某些系统下白色背景 I-beam 消失的问题 */
+  background: #ffffff !important;
   color: #1f2937;
   font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  /* 确保光标颜色在浅色模式下足够深 */
+  caret-color: #000000;
 }
 
 .dark .markdown-editor-codemirror .cm-editor {
+  background: #111827 !important;
   color: #dbe5f3;
 }
 
+/* 彻底修复背景透明导致指针消失的问题 */
+.markdown-editor-codemirror,
+.markdown-editor-codemirror .cm-scroller,
+.markdown-editor-codemirror .cm-content {
+  background-color: #ffffff !important;
+  cursor: text;
+}
+
+.dark .markdown-editor-codemirror,
+.dark .markdown-editor-codemirror .cm-scroller,
+.dark .markdown-editor-codemirror .cm-content {
+  background-color: #111827 !important;
+}
+
+/* 优化鼠标指针在白色背景下的可见性 */
 .markdown-editor-codemirror .cm-scroller {
-  background: transparent;
   font-family: inherit;
   line-height: 1.78;
 }
@@ -254,6 +272,7 @@
   padding: 52px 48px 84px;
   caret-color: #2563eb;
   letter-spacing: 0;
+  cursor: text; /* 默认 text 游标在白色背景下是 I-beam (工字型)，如果背景全白可能看不清 */
 }
 
 .markdown-editor-codemirror .cm-line {
@@ -310,6 +329,156 @@
 
 .cm-md-inline-code {
   border: 1px solid rgba(219, 39, 119, 0.10);
+}
+
+.cm-md-link {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  cursor: text;
+}
+
+.cm-md-link:hover {
+  color: #1d4ed8;
+}
+
+.dark .cm-md-link {
+  color: #93c5fd;
+}
+
+.dark .cm-md-link:hover {
+  color: #bfdbfe;
+}
+
+.link-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.26);
+  backdrop-filter: blur(3px);
+}
+
+.link-dialog-panel {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid rgba(203, 213, 225, 0.84);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+  color: #0f172a;
+  animation: panel-fade-in 140ms ease both;
+}
+
+.dark .link-dialog-panel {
+  border-color: rgba(51, 65, 85, 0.96);
+  background: rgba(17, 24, 39, 0.98);
+  color: #e5edf7;
+  box-shadow: 0 24px 76px rgba(0, 0, 0, 0.42);
+}
+
+.link-dialog-title {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.link-dialog-form {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+
+.link-dialog-field {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dark .link-dialog-field {
+  color: #cbd5e1;
+}
+
+.link-dialog-field input {
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 7px;
+  padding: 0 10px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.link-dialog-field input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+
+.dark .link-dialog-field input {
+  border-color: rgba(148, 163, 184, 0.26);
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.link-dialog-error {
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.dark .link-dialog-error {
+  color: #fca5a5;
+}
+
+.link-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.link-dialog-button {
+  min-width: 68px;
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+}
+
+.link-dialog-button:active {
+  transform: scale(0.97);
+}
+
+.link-dialog-cancel {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.link-dialog-confirm {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.dark .link-dialog-cancel {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.dark .link-dialog-confirm {
+  background: #3b82f6;
+}
+
+.auto-save-state {
+  transition: color 160ms ease, opacity 160ms ease;
 }
 
 .cm-md-image-widget {

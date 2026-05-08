@@ -94,7 +94,7 @@ const MarkdownToolbar: React.FC<MarkdownToolbarProps> = ({ onCommand, onChooseIm
       <div className={groupClass}>
         <ToolbarButton onCommand={onCommand} command="codeBlock" icon={<ListChecks size={18} />} />
         <ToolbarButton onCommand={onCommand} command="mathBlock" icon={<Sigma size={18} />} />
-        <ToolbarButton onCommand={onCommand} command="link" icon={<Link size={18} />} />
+        <ToolbarButton onCommand={onCommand} command="insertLink" icon={<Link size={18} />} />
         <ImageInsertMenu onChooseFile={onChooseImageFile} onInsertUrl={onInsertImageUrl} />
         <ToolbarButton onCommand={onCommand} command="table" icon={<Table size={18} />} />
         <ToolbarButton onCommand={onCommand} command="divider" icon={<Minus size={18} />} />

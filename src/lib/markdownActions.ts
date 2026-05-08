@@ -4,6 +4,22 @@ import { CODE_BLOCK_LANGUAGES, normalizeCodeLanguage } from './codeBlockLanguage
 
 export type MarkdownAction = (view: EditorView) => void | Promise<void>;
 
+export interface LinkInput {
+  text: string;
+  url: string;
+}
+
+export interface ParsedLink extends LinkInput {
+  from: number;
+  to: number;
+  textFrom: number;
+  textTo: number;
+  urlFrom: number;
+  urlTo: number;
+}
+
+export type RequestLinkInput = (initial: LinkInput, mode: 'insert' | 'edit') => Promise<LinkInput | null>;
+
 const getSelectedText = (view: EditorView, range: SelectionRange) => {
   return view.state.sliceDoc(range.from, range.to);
 };
@@ -272,20 +288,121 @@ const insertMathBlock = (view: EditorView) => {
   insertBlock(view, '\n$$\n', '\n$$\n', 'x = y + z');
 };
 
-const insertLink = (view: EditorView) => {
-  const transaction = view.state.changeByRange((range) => {
-    const selectedText = getSelectedText(view, range) || 'link text';
-    const insert = `[${selectedText}](https://example.com)`;
-    const urlFrom = range.from + selectedText.length + 3;
-    const urlTo = urlFrom + 'https://example.com'.length;
-    return {
-      changes: { from: range.from, to: range.to, insert },
-      range: EditorSelection.range(urlFrom, urlTo),
-    };
-  });
+export const normalizeUrl = (url: string) => {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
 
-  view.dispatch(transaction);
+  if (/^file:/i.test(trimmed)) return null;
+  if (/^mailto:/i.test(trimmed)) {
+    return trimmed.length > 'mailto:'.length ? trimmed : null;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      return new URL(trimmed).href;
+    } catch {
+      return null;
+    }
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+
+  const withProtocol = `https://${trimmed}`;
+  try {
+    const parsed = new URL(withProtocol);
+    return parsed.hostname.includes('.') ? parsed.href : null;
+  } catch {
+    return null;
+  }
+};
+
+export const parseSelectedLink = (view: EditorView): ParsedLink | null => {
+  const selection = view.state.selection.main;
+  const head = selection.head;
+  const scanFrom = view.state.doc.lineAt(selection.from).from;
+  const scanTo = view.state.doc.lineAt(selection.to).to;
+  const text = view.state.sliceDoc(scanFrom, scanTo);
+  const linkRegex = /(?<!!)\[([^\]\n]+)\]\(([^)\n]*)\)/g;
+
+  for (const match of text.matchAll(linkRegex)) {
+    if (match.index === undefined) continue;
+    const full = match[0];
+    const linkText = match[1] ?? '';
+    const url = match[2] ?? '';
+    const from = scanFrom + match.index;
+    const to = from + full.length;
+    const textFrom = from + 1;
+    const textTo = textFrom + linkText.length;
+    const urlFrom = textTo + 2;
+    const urlTo = urlFrom + url.length;
+    const touchesSelection = selection.empty
+      ? head >= from && head <= to
+      : selection.from >= from && selection.to <= to;
+
+    if (touchesSelection) {
+      return { from, to, textFrom, textTo, urlFrom, urlTo, text: linkText, url };
+    }
+  }
+
+  return null;
+};
+
+export const updateLink = (view: EditorView, from: number, to: number, text: string, url: string) => {
+  const normalizedUrl = normalizeUrl(url);
+  if (!normalizedUrl) return false;
+
+  const safeText = text.trim() || '链接文本';
+  const insert = `[${safeText}](${normalizedUrl})`;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: EditorSelection.cursor(from + insert.length),
+    scrollIntoView: true,
+  });
   view.focus();
+  return true;
+};
+
+const requestLinkWithPrompt: RequestLinkInput = async (initial, mode) => {
+  if (mode === 'edit') {
+    const text = window.prompt('链接文本', initial.text);
+    if (text === null) return null;
+    const url = window.prompt('链接地址', initial.url);
+    if (url === null) return null;
+    return { text, url };
+  }
+
+  if (initial.text && initial.text !== '链接文本') {
+    const url = window.prompt('链接地址', initial.url);
+    if (url === null) return null;
+    return { text: initial.text, url };
+  }
+
+  const text = window.prompt('链接文本', initial.text);
+  if (text === null) return null;
+  const url = window.prompt('链接地址', initial.url);
+  if (url === null) return null;
+  return { text, url };
+};
+
+const insertLink = async (view: EditorView, requestLinkInput: RequestLinkInput = requestLinkWithPrompt) => {
+  const existingLink = parseSelectedLink(view);
+  const range = view.state.selection.main;
+  const selectedText = existingLink ? existingLink.text : getSelectedText(view, range);
+  const initial: LinkInput = {
+    text: selectedText || '链接文本',
+    url: existingLink?.url || 'https://example.com',
+  };
+
+  const next = await requestLinkInput(initial, existingLink ? 'edit' : 'insert');
+  if (!next) {
+    view.focus();
+    return;
+  }
+
+  const from = existingLink?.from ?? range.from;
+  const to = existingLink?.to ?? range.to;
+  const changed = updateLink(view, from, to, next.text, next.url);
+  if (!changed) {
+    view.focus();
+  }
 };
 
 const insertImage = (view: EditorView) => {

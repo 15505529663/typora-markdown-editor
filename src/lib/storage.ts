@@ -35,6 +35,8 @@ export const safeClearLocalEditorState = () => {
     Object.keys(localStorage)
       .filter((key) =>
         key.startsWith('draft_') ||
+        key.startsWith('markedit_draft:') ||
+        key === 'markedit_settings' ||
         key === 'theme' ||
         key === 'sidebar_active_tab' ||
         key === 'layout_sidebar_width' ||

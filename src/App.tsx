@@ -11,19 +11,30 @@ import WelcomeScreen from './components/WelcomeScreen';
 import Toast, { ToastMessage, ToastType } from './components/Toast';
 import TopMenuBar from './components/TopMenuBar';
 import ImageInsertMenu from './components/ImageInsertMenu';
+import LinkDialog from './components/LinkDialog';
 import { FileInfo } from './types';
 import { CommandId } from './lib/editorCommands';
 import { parseMarkdownOutline, OutlineItem } from './lib/outline';
 import { executeEditorCommand, SavedSelection } from './lib/executeCommand';
+import { LinkInput, RequestLinkInput } from './lib/markdownActions';
 import { getWindowsShortcutCommand } from './lib/shortcuts';
 import { apiUrl, getApiErrorMessage, importDocument, uploadAsset as uploadAssetFile } from './lib/api';
 import { exportAsHtml, exportAsMarkdown, exportAsPdf, exportAsText } from './lib/export';
 import { insertImageAtCursor, isImageFile } from './lib/image';
 import { safeGetStorageItem, safeRemoveStorageItem, safeSetStorageItem } from './lib/storage';
+import { hasNewerDraft, loadDraft, removeDraft, saveDraft } from './lib/draftStorage';
+import { SaveStatus } from './lib/autoSave';
+import { loadEditorSettings } from './lib/settings';
 
 // 设置 Axios 默认配置以支持 API Key 认证
 const ACCESS_TOKEN = 'markedit_secret_2024';
 axios.defaults.headers.common['x-access-token'] = ACCESS_TOKEN;
+
+interface LinkDialogState {
+  initialValue: LinkInput;
+  mode: 'insert' | 'edit';
+  resolve: (value: LinkInput | null) => void;
+}
 
 function App() {
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -37,7 +48,11 @@ function App() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [linkDialog, setLinkDialog] = useState<LinkDialogState | null>(null);
   const [hasEnteredEditor, setHasEnteredEditor] = useState(() => safeGetStorageItem(sessionStorage, 'hasEnteredEditorThisSession') === 'true');
+  const [settings] = useState(() => loadEditorSettings());
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const theme = safeGetStorageItem(localStorage, 'theme');
     return theme === 'dark' ||
@@ -45,10 +60,14 @@ function App() {
   });
 
   const lastSavedContent = useRef('');
+  const isSavedRef = useRef(true);
+  const isAutoSavingRef = useRef(false);
+  const lastBackupAtRef = useRef<Record<string, number>>({});
   const selectedFileRef = useRef<string | null>(null);
   const contentRef = useRef('');
   const editorViewRef = useRef<EditorView | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const draftSaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     selectedFileRef.current = selectedFile;
@@ -61,6 +80,10 @@ function App() {
   useEffect(() => {
     editorViewRef.current = editorView;
   }, [editorView]);
+
+  useEffect(() => {
+    isSavedRef.current = isSaved;
+  }, [isSaved]);
 
   const getLiveEditorView = useCallback(() => {
     const view = editorViewRef.current;
@@ -78,6 +101,19 @@ function App() {
     setToast({ id: Date.now(), message, type });
   }, []);
 
+  const requestLinkInput = useCallback<RequestLinkInput>((initialValue, mode) => {
+    return new Promise((resolve) => {
+      setLinkDialog({ initialValue, mode, resolve });
+    });
+  }, []);
+
+  const closeLinkDialog = useCallback((value: LinkInput | null) => {
+    setLinkDialog((current) => {
+      current?.resolve(value);
+      return null;
+    });
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const timeoutId = window.setTimeout(() => setToast(null), 2200);
@@ -87,35 +123,68 @@ function App() {
   const handleContentChange = useCallback((newContent: string) => {
     setContent(newContent);
     contentRef.current = newContent;
-    setIsSaved(newContent === lastSavedContent.current);
+    const saved = newContent === lastSavedContent.current;
+    setIsSaved(saved);
+    isSavedRef.current = saved;
+    setSaveStatus(saved ? 'saved' : 'unsaved');
     setOutline(parseMarkdownOutline(newContent));
 
-    if (selectedFileRef.current) {
-      safeSetStorageItem(localStorage, `draft_${selectedFileRef.current}`, newContent);
+    if (draftSaveTimerRef.current !== null) {
+      window.clearTimeout(draftSaveTimerRef.current);
     }
-  }, []);
+
+    const filename = selectedFileRef.current;
+    if (settings.draftEnabled && filename && !saved) {
+      draftSaveTimerRef.current = window.setTimeout(() => {
+        saveDraft(filename, contentRef.current);
+        setSaveStatus((current) => (current === 'unsaved' ? 'draftSaved' : current));
+      }, 1000);
+    }
+  }, [settings.draftEnabled]);
 
   const handleFileSelect = useCallback(async (filename: string) => {
     try {
+      if (selectedFileRef.current && selectedFileRef.current !== filename && !isSavedRef.current) {
+        if (settings.draftEnabled) {
+          saveDraft(selectedFileRef.current, getLiveEditorView()?.state.doc.toString() ?? contentRef.current);
+        }
+        const shouldSwitch = window.confirm('当前文件有未保存修改，草稿已保存。是否继续切换文件？');
+        if (!shouldSwitch) return;
+      }
+
       document.querySelectorAll('.cm-code-language-menu, .cm-code-insert-language-menu').forEach((node) => node.remove());
       const res = await axios.get(apiUrl(`/files/${encodeURIComponent(filename)}`));
       const fileContent = res.data.content;
-      const draft = safeGetStorageItem(localStorage, `draft_${filename}`);
-      const nextContent = draft && draft !== fileContent ? draft : fileContent;
+      const fileUpdatedAt = res.data.updatedAt;
+      let nextContent = fileContent;
+      const draft = settings.draftEnabled ? loadDraft(filename) : null;
+
+      if (settings.draftEnabled && settings.draftRestoreEnabled && draft && hasNewerDraft(filename, fileContent, fileUpdatedAt)) {
+        const shouldRestore = window.confirm('检测到未恢复的草稿，是否恢复？\n\n确定：恢复草稿\n取消：丢弃草稿');
+        if (shouldRestore) {
+          nextContent = draft.content;
+        } else {
+          removeDraft(filename);
+        }
+      }
 
       setSelectedFile(filename);
       selectedFileRef.current = filename;
       setContent(nextContent);
       contentRef.current = nextContent;
       lastSavedContent.current = fileContent;
-      setIsSaved(nextContent === fileContent);
+      const saved = nextContent === fileContent;
+      setIsSaved(saved);
+      isSavedRef.current = saved;
+      setSaveStatus(saved ? 'saved' : 'draftSaved');
+      setLastSavedAt(fileUpdatedAt ? new Date(fileUpdatedAt) : null);
       setOutline(parseMarkdownOutline(nextContent));
       setCurrentLine(1);
     } catch (err) {
       console.error('Failed to load file', err);
       showToast(getApiErrorMessage(err, '读取文件失败'));
     }
-  }, [showToast]);
+  }, [getLiveEditorView, settings.draftEnabled, settings.draftRestoreEnabled, showToast]);
 
   const fetchFiles = useCallback(async () => {
     try {
@@ -155,29 +224,50 @@ function App() {
     view.focus();
   }, [getLiveEditorView]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (options: { source?: 'manual' | 'auto'; silent?: boolean } = {}) => {
     const filename = selectedFileRef.current;
     if (!filename) {
-      showToast('No file selected');
-      return;
+      if (!options.silent) showToast('No file selected');
+      return false;
     }
 
     const latestContent = getLiveEditorView()?.state.doc.toString() ?? contentRef.current;
+    const now = Date.now();
+    const backupAllowed =
+      settings.backupEnabled &&
+      latestContent !== lastSavedContent.current &&
+      (options.source !== 'auto' || now - (lastBackupAtRef.current[filename] ?? 0) > 60000);
 
     try {
-      await axios.post(apiUrl('/files'), { name: filename, content: latestContent });
-      safeRemoveStorageItem(localStorage, `draft_${filename}`);
+      await axios.post(apiUrl('/files'), {
+        name: filename,
+        content: latestContent,
+        backup: backupAllowed,
+        maxBackups: settings.maxBackupsPerFile,
+      });
+      if (backupAllowed) {
+        lastBackupAtRef.current[filename] = now;
+      }
+      removeDraft(filename);
       lastSavedContent.current = latestContent;
       setContent(latestContent);
       contentRef.current = latestContent;
       setIsSaved(true);
+      isSavedRef.current = true;
+      setSaveStatus(options.source === 'auto' ? 'autoSaved' : 'saved');
+      setLastSavedAt(new Date());
       setOutline(parseMarkdownOutline(latestContent));
       fetchFiles();
+      return true;
     } catch (err) {
       console.error('Failed to save file', err);
-      showToast(getApiErrorMessage(err, '保存失败'));
+      setIsSaved(false);
+      isSavedRef.current = false;
+      setSaveStatus(options.source === 'auto' ? 'autoSaveFailed' : 'unsaved');
+      if (!options.silent) showToast(getApiErrorMessage(err, '保存失败'), 'error');
+      return false;
     }
-  }, [fetchFiles, getLiveEditorView, showToast]);
+  }, [fetchFiles, getLiveEditorView, settings.backupEnabled, settings.maxBackupsPerFile, showToast]);
 
   const getLatestEditorContent = useCallback(() => {
     return getLiveEditorView()?.state.doc.toString() ?? contentRef.current;
@@ -349,12 +439,16 @@ function App() {
     try {
       await axios.delete(apiUrl(`/files/${encodeURIComponent(filename)}`));
       if (selectedFileRef.current === filename) {
+        removeDraft(filename);
         setSelectedFile(null);
         selectedFileRef.current = null;
         setContent('');
         contentRef.current = '';
         setOutline([]);
         setIsSaved(true);
+        isSavedRef.current = true;
+        setSaveStatus('saved');
+        setLastSavedAt(null);
       }
       fetchFiles();
     } catch (err) {
@@ -429,14 +523,17 @@ function App() {
 
     await executeEditorCommand(id, {
       editorView: getLiveEditorView(),
-      saveCurrentFile: handleSave,
+      saveCurrentFile: async () => {
+        await handleSave();
+      },
       createFile: handleCreateFile,
       toggleSidebar: () => setIsSidebarVisible((value) => !value),
       toggleFullscreen,
       showToast,
       syncContent: handleContentChange,
+      requestLinkInput,
     }, { selection });
-  }, [getLiveEditorView, handleContentChange, handleCreateFile, handleInsertImageUrl, handleSave, showToast, toggleFullscreen, handleExport]);
+  }, [getLiveEditorView, handleContentChange, handleCreateFile, handleInsertImageUrl, handleSave, requestLinkInput, showToast, toggleFullscreen, handleExport]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -451,6 +548,50 @@ function App() {
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [handleCommand]);
+
+  useEffect(() => {
+    if (!settings.autoSaveEnabled) return;
+
+    const intervalId = window.setInterval(() => {
+      const filename = selectedFileRef.current;
+      const latestContent = getLiveEditorView()?.state.doc.toString() ?? contentRef.current;
+      if (!filename || isAutoSavingRef.current || isSavedRef.current || latestContent === lastSavedContent.current) {
+        return;
+      }
+
+      isAutoSavingRef.current = true;
+      setSaveStatus('autoSaving');
+      void handleSave({ source: 'auto', silent: true }).finally(() => {
+        isAutoSavingRef.current = false;
+      });
+    }, settings.autoSaveIntervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [getLiveEditorView, handleSave, settings.autoSaveEnabled, settings.autoSaveIntervalMs]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const filename = selectedFileRef.current;
+      if (filename && !isSavedRef.current) {
+        if (settings.draftEnabled) {
+          saveDraft(filename, getLiveEditorView()?.state.doc.toString() ?? contentRef.current);
+        }
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [getLiveEditorView, settings.draftEnabled]);
+
+  useEffect(() => {
+    return () => {
+      if (draftSaveTimerRef.current !== null) {
+        window.clearTimeout(draftSaveTimerRef.current);
+      }
+    };
+  }, []);
 
   if (!hasEnteredEditor) {
     return (
@@ -493,7 +634,7 @@ function App() {
             <div className="h-4 w-px bg-gray-300 dark:bg-gray-600 hidden lg:block" />
             <div className="flex items-center space-x-2 truncate max-w-[260px]">
               <span className="text-sm font-medium truncate">{selectedFile || 'Untitled'}</span>
-              {!isSaved && <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" title="Unsaved changes" />}
+              {!isSaved && <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" title="未保存" />}
             </div>
           </div>
 
@@ -525,7 +666,7 @@ function App() {
             </button>
             <button
               type="button"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={isSaved || !selectedFile}
               className={`app-action-button p-2 rounded-md transition-colors ${
                 isSaved || !selectedFile
@@ -595,10 +736,20 @@ function App() {
 
       <Toast toast={toast} />
 
+      <LinkDialog
+        open={Boolean(linkDialog)}
+        initialValue={linkDialog?.initialValue ?? { text: '链接文本', url: 'https://example.com' }}
+        mode={linkDialog?.mode ?? 'insert'}
+        onConfirm={(value) => closeLinkDialog(value)}
+        onCancel={() => closeLinkDialog(null)}
+      />
+
       <StatusBar
         filename={selectedFile}
         isSaved={isSaved}
         content={content}
+        saveStatus={saveStatus}
+        lastSavedAt={lastSavedAt}
       />
     </div>
   );

@@ -19,6 +19,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3001;
 const NOTES_DIR = path.resolve(__dirname, '../notes');
+const BACKUPS_DIR = path.join(NOTES_DIR, '.backups');
 const { router: assetsRouter, assetsDir: ASSETS_DIR } = createAssetsRouter(NOTES_DIR);
 
 // 简单的 API Key 保护，防止公网未授权访问
@@ -27,6 +28,7 @@ const ACCESS_TOKEN = 'markedit_secret_2024';
 
 fs.ensureDirSync(NOTES_DIR);
 fs.ensureDirSync(ASSETS_DIR);
+fs.ensureDirSync(BACKUPS_DIR);
 
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
@@ -51,6 +53,54 @@ app.use('/assets', express.static(ASSETS_DIR, {
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   return error instanceof Error ? error.message : fallback;
+};
+
+const makeBackupName = (fileName: string) => {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${fileName}.${timestamp}.md`;
+};
+
+const resolveSafeBackupPath = (backupName: string) => {
+  const targetPath = path.resolve(BACKUPS_DIR, path.basename(backupName));
+  const relative = path.relative(BACKUPS_DIR, targetPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('非法备份路径');
+  }
+  return targetPath;
+};
+
+const cleanupBackups = async (fileName: string, maxBackups: number) => {
+  await fs.ensureDir(BACKUPS_DIR);
+  const backups = await Promise.all(
+    (await fs.readdir(BACKUPS_DIR))
+      .filter((name) => name.startsWith(`${fileName}.`) && name.endsWith('.md'))
+      .map(async (name) => ({
+        name,
+        path: path.join(BACKUPS_DIR, name),
+        stat: await fs.stat(path.join(BACKUPS_DIR, name)),
+      }))
+  );
+
+  await Promise.all(backups
+    .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)
+    .slice(Math.max(1, maxBackups))
+    .map((backup) => fs.remove(backup.path)));
+};
+
+const createBackupBeforeWrite = async (
+  fileName: string,
+  filePath: string,
+  nextContent: string,
+  maxBackups: number
+) => {
+  if (!await fs.pathExists(filePath)) return;
+  const previousContent = await fs.readFile(filePath, 'utf-8');
+  if (previousContent === nextContent) return;
+
+  await fs.ensureDir(BACKUPS_DIR);
+  const backupName = makeBackupName(fileName);
+  await fs.writeFile(resolveSafeBackupPath(backupName), previousContent, 'utf-8');
+  await cleanupBackups(fileName, maxBackups);
 };
 
 app.get('/api/files', async (_req, res) => {
@@ -84,10 +134,57 @@ app.get('/api/files/:filename', async (req, res) => {
       return res.status(404).json({ success: false, error: '文件不存在' });
     }
 
-    const content = await fs.readFile(filePath, 'utf-8');
-    res.json({ success: true, content });
+    const [content, stat] = await Promise.all([
+      fs.readFile(filePath, 'utf-8'),
+      fs.stat(filePath),
+    ]);
+    res.json({ success: true, content, updatedAt: stat.mtime.toISOString(), updatedAtMs: stat.mtimeMs });
   } catch (error) {
     res.status(400).json({ success: false, error: getErrorMessage(error, '读取文件失败') });
+  }
+});
+
+app.get('/api/files/:filename/backups', async (req, res) => {
+  try {
+    const { fileName } = resolveSafeNotePath(NOTES_DIR, req.params.filename);
+    await fs.ensureDir(BACKUPS_DIR);
+    const backups = await Promise.all(
+      (await fs.readdir(BACKUPS_DIR))
+        .filter((name) => name.startsWith(`${fileName}.`) && name.endsWith('.md'))
+        .map(async (name) => {
+          const stat = await fs.stat(path.join(BACKUPS_DIR, name));
+          return {
+            name,
+            updatedAt: stat.mtime.toISOString(),
+          };
+        })
+    );
+
+    backups.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    res.json({ success: true, data: backups });
+  } catch (error) {
+    res.status(400).json({ success: false, error: getErrorMessage(error, '读取备份失败') });
+  }
+});
+
+app.post('/api/files/:filename/restore-backup', async (req, res) => {
+  try {
+    const { backupName } = req.body as { backupName?: string };
+    const { fileName, filePath } = resolveSafeNotePath(NOTES_DIR, req.params.filename);
+    if (!backupName || !backupName.startsWith(`${fileName}.`)) {
+      return res.status(400).json({ success: false, error: '非法备份名称' });
+    }
+
+    const backupPath = resolveSafeBackupPath(backupName);
+    if (!await fs.pathExists(backupPath)) {
+      return res.status(404).json({ success: false, error: '备份不存在' });
+    }
+
+    await createBackupBeforeWrite(fileName, filePath, await fs.readFile(backupPath, 'utf-8'), 5);
+    await fs.copy(backupPath, filePath);
+    res.json({ success: true, data: { fileName, path: fileName } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: getErrorMessage(error, '恢复备份失败') });
   }
 });
 
@@ -97,6 +194,8 @@ app.post('/api/files', async (req, res) => {
       name?: string;
       content?: string;
       create?: boolean;
+      backup?: boolean;
+      maxBackups?: number;
     };
 
     const validationError = validateRawFileName(name || '');
@@ -112,6 +211,9 @@ app.post('/api/files', async (req, res) => {
     }
 
     await fs.ensureDir(NOTES_DIR);
+    if (req.body.backup) {
+      await createBackupBeforeWrite(fileName, filePath, content, Number(req.body.maxBackups) || 5);
+    }
     await fs.writeFile(filePath, content, 'utf-8');
     res.json({ success: true, data: { fileName, path: fileName } });
   } catch (error) {

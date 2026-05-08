@@ -7,7 +7,7 @@ export type CommandId =
   | 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'headingUp' | 'headingDown'
   | 'table' | 'codeBlock' | 'mathBlock' | 'quote' | 'orderedList' | 'unorderedList' | 'taskList' | 'doneTask'
   | 'divider' | 'indent' | 'outdent'
-  | 'bold' | 'italic' | 'underline' | 'strike' | 'inlineCode' | 'link' | 'image' | 'clearFormat'
+  | 'bold' | 'italic' | 'underline' | 'strike' | 'inlineCode' | 'insertLink' | 'link' | 'image' | 'clearFormat'
   | 'toggleSidebar' | 'outlineView' | 'articleView' | 'fileTreeView' | 'toggleSourceMode' | 'focusMode' | 'typewriterMode' | 'fullScreen'
   | 'zoomActual' | 'zoomIn' | 'zoomOut' | 'switchDoc';
 
@@ -79,7 +79,7 @@ export const editorCommands: EditorCommand[] = [
   { id: 'underline', label: '下划线', group: 'format', shortcut: 'Ctrl+U', action: 'underline' },
   { id: 'strike', label: '删除线', group: 'format', shortcut: 'Alt+Shift+5', action: 'strike' },
   { id: 'inlineCode', label: '行内代码', group: 'format', shortcut: 'Ctrl+Shift+`', action: 'inlineCode' },
-  { id: 'link', label: '插入链接', group: 'format', shortcut: 'Ctrl+K', action: 'link' },
+  { id: 'insertLink', label: '插入链接', group: 'format', shortcut: 'Ctrl+K', action: 'insertLink' },
   { id: 'image', label: '插入图片', group: 'format', shortcut: 'Ctrl+Shift+I', action: 'image' },
   { id: 'clearFormat', label: '清除格式', group: 'format', shortcut: 'Ctrl+\\', action: 'clearFormat' },
 

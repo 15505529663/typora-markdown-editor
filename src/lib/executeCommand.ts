@@ -2,7 +2,7 @@ import { EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { redo, undo } from '@codemirror/commands';
 import { CommandId } from './editorCommands';
-import { markdownActions } from './markdownActions';
+import { markdownActions, RequestLinkInput } from './markdownActions';
 
 export interface SavedSelection {
   anchor: number;
@@ -17,6 +17,7 @@ export interface EditorCommandContext {
   toggleFullscreen: () => void;
   showToast: (message: string) => void;
   syncContent: (content: string) => void;
+  requestLinkInput?: RequestLinkInput;
 }
 
 export interface ExecuteCommandOptions {
@@ -55,7 +56,8 @@ const editorActions: Partial<Record<CommandId, (view: EditorView) => void | Prom
   mathBlock: markdownActions.insertMathBlock,
   table: markdownActions.insertTable,
   divider: markdownActions.insertDivider,
-  link: markdownActions.insertLink,
+  insertLink: (view) => markdownActions.insertLink(view),
+  link: (view) => markdownActions.insertLink(view),
   image: markdownActions.insertImage,
   selectAll: markdownActions.selectAllText,
   selectLine: markdownActions.selectCurrentLine,
@@ -142,7 +144,11 @@ export const executeEditorCommand = async (
 
   restoreSelection(view, options.selection);
   const before = view.state.doc.toString();
-  await action(view);
+  if (id === 'insertLink' || id === 'link') {
+    await markdownActions.insertLink(view, context.requestLinkInput);
+  } else {
+    await action(view);
+  }
   view.focus();
 
   if (view.state.doc.toString() !== before) {

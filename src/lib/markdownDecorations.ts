@@ -1,5 +1,6 @@
 import { Range } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from '@codemirror/view';
+import { normalizeUrl } from './markdownActions';
 
 const hiddenMarker = Decoration.replace({
   inclusive: false,
@@ -19,6 +20,7 @@ const inlineStyles = {
   strike: Decoration.mark({ class: 'cm-md-strike' }),
   code: Decoration.mark({ class: 'cm-md-inline-code' }),
   underline: Decoration.mark({ class: 'cm-md-underline' }),
+  link: Decoration.mark({ class: 'cm-md-link' }),
 };
 
 interface InlineMatch {
@@ -68,6 +70,28 @@ const pushInlineMatch = (matches: InlineMatch[], match: InlineMatch) => {
 const collectInlineMatches = (lineText: string, lineFrom: number) => {
   const matches: InlineMatch[] = [];
 
+  for (const match of lineText.matchAll(/(?<!!)\[([^\]\n]+)\]\(([^)\n]*)\)/g)) {
+    if (match.index === undefined) continue;
+    const from = lineFrom + match.index;
+    const linkText = match[1] ?? '';
+    const fullText = match[0];
+    const contentFrom = from + 1;
+    const contentTo = contentFrom + linkText.length;
+    const to = from + fullText.length;
+
+    pushInlineMatch(matches, {
+      from,
+      to,
+      contentFrom,
+      contentTo,
+      markers: [
+        { from, to: contentFrom },
+        { from: contentTo, to },
+      ],
+      style: 'link',
+    });
+  }
+
   const collect = (
     regex: RegExp,
     style: keyof typeof inlineStyles,
@@ -104,6 +128,26 @@ const collectInlineMatches = (lineText: string, lineFrom: number) => {
   collect(/(?<!_)_([^_\n]+?)_(?!_)/g, 'italic', 1, 1);
 
   return matches.sort((a, b) => a.from - b.from || a.to - b.to);
+};
+
+const getLinkAtPosition = (view: EditorView, pos: number) => {
+  const line = view.state.doc.lineAt(pos);
+  const linkRegex = /(?<!!)\[([^\]\n]+)\]\(([^)\n]*)\)/g;
+
+  for (const match of line.text.matchAll(linkRegex)) {
+    if (match.index === undefined) continue;
+    const from = line.from + match.index;
+    const to = from + match[0].length;
+    if (pos < from || pos > to) continue;
+    return {
+      from,
+      to,
+      text: match[1] ?? '',
+      url: match[2] ?? '',
+    };
+  }
+
+  return null;
 };
 
 const buildDecorations = (view: EditorView) => {
@@ -157,7 +201,7 @@ const buildDecorations = (view: EditorView) => {
 };
 
 export const typoraLikeMarkdownDecorations = () => {
-  return ViewPlugin.fromClass(
+  const plugin = ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
 
@@ -175,4 +219,24 @@ export const typoraLikeMarkdownDecorations = () => {
       decorations: (plugin) => plugin.decorations,
     }
   );
+
+  return [
+    plugin,
+    EditorView.domEventHandlers({
+      mousedown: (event, view) => {
+        if (!(event.ctrlKey || event.metaKey)) return false;
+        if (!(event.target instanceof HTMLElement) || !event.target.closest('.cm-md-link')) return false;
+
+        const pos = view.posAtDOM(event.target);
+        const link = getLinkAtPosition(view, pos);
+        const url = link ? normalizeUrl(link.url) : null;
+        if (!url) return false;
+
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return true;
+      },
+    }),
+  ];
 };

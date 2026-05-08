@@ -19,6 +19,7 @@ Thumbs.db
 tmp/
 temp/
 notes/
+notes/.backups/
 .cache/
 
 .idea/

@@ -94,7 +94,7 @@ const menus: MenuGroup[] = [
       { type: 'command', id: 'strike', label: '删除线', shortcut: 'Alt+Shift+5' },
       { type: 'command', id: 'inlineCode', label: '行内代码', shortcut: 'Ctrl+Shift+`' },
       { type: 'separator' },
-      { type: 'command', id: 'link', label: '插入链接', shortcut: 'Ctrl+K' },
+      { type: 'command', id: 'insertLink', label: '插入链接', shortcut: 'Ctrl+K' },
       { type: 'command', id: 'image', label: '插入图片', shortcut: 'Ctrl+Shift+I' },
       { type: 'separator' },
       { type: 'command', id: 'clearFormat', label: '清除格式', shortcut: 'Ctrl+\\' },
